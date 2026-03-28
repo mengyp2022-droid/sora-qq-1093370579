@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from app.routers.auth import get_current_user
 from app.database import get_db, init_db
+from app.security import get_password_hash
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
 
@@ -60,8 +61,6 @@ def get_settings(username: str = Depends(get_current_user)):
 @router.put("")
 def update_settings(body: SettingsBody, username: str = Depends(get_current_user)):
     init_db()
-    from passlib.context import CryptContext
-    pwd_ctx = CryptContext(schemes=["bcrypt"], deprecated="auto")
     with get_db() as conn:
         c = conn.cursor()
         for key, value in [
@@ -91,7 +90,7 @@ def update_settings(body: SettingsBody, username: str = Depends(get_current_user
                 (key, value or "")
             )
         if body.admin_username and body.admin_password:
-            hash_val = pwd_ctx.hash(body.admin_password)
+            hash_val = get_password_hash(body.admin_password)
             c.execute(
                 "INSERT INTO admin_users (username, password_hash, updated_at) VALUES (?, ?, datetime('now')) ON CONFLICT(username) DO UPDATE SET password_hash=?, updated_at=datetime('now')",
                 (body.admin_username, hash_val, hash_val)
@@ -104,9 +103,7 @@ def update_login(body: LoginUpdateBody, username: str = Depends(get_current_user
     """仅修改登录账号与密码，与系统设置分离"""
     if not body.admin_username or not body.admin_password:
         raise HTTPException(status_code=400, detail="账号与密码均不能为空")
-    from passlib.context import CryptContext
-    pwd_ctx = CryptContext(schemes=["bcrypt"], deprecated="auto")
-    hash_val = pwd_ctx.hash(body.admin_password)
+    hash_val = get_password_hash(body.admin_password)
     init_db()
     with get_db() as conn:
         c = conn.cursor()

@@ -1018,6 +1018,8 @@ var soraVideoSelectedTaskId = localStorage.getItem("sora_video_selected_task_id"
 var soraVideoPollers = {};
 var soraVideoUiClock = null;
 var soraVideoCreateInFlight = false;
+var soraVideoSnapshotRefreshInFlight = {};
+var soraVideoMediaReloadAttempts = {};
 var SORA_VIDEO_TASKS_STORAGE_KEY = "sora_video_workspace_tasks_v2";
 var SORA_VIDEO_AUTO_ROTATE_STORAGE_KEY = "sora_video_auto_rotate";
 
@@ -1511,7 +1513,11 @@ function renderSoraVideoStage() {
   var kickerEl = document.getElementById("sora-video-stage-kicker");
   var task = getSoraVideoTask(soraVideoSelectedTaskId);
   if (!task) {
-    if (mediaEl) mediaEl.innerHTML = '<div class="video-stage-placeholder"><div class="video-stage-placeholder-icon">Sora</div><p>还没有任务，点击右上角黄色按钮开始生成。</p></div>';
+    if (mediaEl) {
+      mediaEl.innerHTML = '<div class="video-stage-placeholder"><div class="video-stage-placeholder-icon">Sora</div><p>还没有任务，点击右上角黄色按钮开始生成。</p></div>';
+      mediaEl.setAttribute("data-task-id", "");
+      mediaEl.setAttribute("data-preview-url", "");
+    }
     if (titleEl) titleEl.textContent = "选择一个任务进行预览";
     if (promptEl) promptEl.textContent = "生成完成后，视频会显示在这个大框里；任务未完成时会显示当前进度和时间。";
     if (statusEl) { statusEl.textContent = "idle"; statusEl.className = "sora-status-badge is-pending"; }
@@ -1528,9 +1534,33 @@ function renderSoraVideoStage() {
   var previewUrl = pickSoraPreviewUrl(task.video_urls);
   if (mediaEl) {
     if (previewUrl) {
-      mediaEl.innerHTML = '<video controls preload="auto" playsinline src="' + escapeHtml(previewUrl) + '"></video>';
+      var renderedTaskId = mediaEl.getAttribute("data-task-id") || "";
+      var renderedPreviewUrl = mediaEl.getAttribute("data-preview-url") || "";
+      var videoEl = mediaEl.querySelector("video");
+      if (renderedTaskId !== task.task_id || renderedPreviewUrl !== previewUrl || !videoEl) {
+        mediaEl.innerHTML = '<video controls preload="auto" playsinline crossorigin="anonymous" src="' + escapeHtml(previewUrl) + '"></video>';
+        mediaEl.setAttribute("data-task-id", task.task_id);
+        mediaEl.setAttribute("data-preview-url", previewUrl);
+        videoEl = mediaEl.querySelector("video");
+        if (videoEl) {
+          videoEl.addEventListener("loadeddata", function() {
+            delete soraVideoMediaReloadAttempts[task.task_id];
+          }, { once: true });
+          videoEl.addEventListener("error", function() {
+            var attempt = soraVideoMediaReloadAttempts[task.task_id] || 0;
+            if (attempt >= 1) return;
+            soraVideoMediaReloadAttempts[task.task_id] = attempt + 1;
+            refreshSoraVideoTaskSnapshot(task.task_id, {
+              message: "视频预览地址已刷新，正在重新加载...",
+              resetMediaRetry: true
+            }).catch(function() {});
+          }, { once: true });
+        }
+      }
     } else {
       mediaEl.innerHTML = '<div class="video-stage-placeholder"><div class="video-stage-placeholder-icon">' + escapeHtml(task.normalized_status || "task") + '</div><p>' + escapeHtml(task.prompt || "任务已创建，正在等待更多进度。") + '</p></div>';
+      mediaEl.setAttribute("data-task-id", task.task_id);
+      mediaEl.setAttribute("data-preview-url", "");
     }
   }
   if (titleEl) titleEl.textContent = trimVideoPrompt(task.prompt || task.task_id, 54) || task.task_id;
@@ -1681,6 +1711,32 @@ function fetchSoraVideoTask(taskId) {
   });
 }
 
+function refreshSoraVideoTaskSnapshot(taskId, options) {
+  var cleanTaskId = (taskId || "").trim();
+  if (!cleanTaskId) return Promise.resolve(null);
+  if (soraVideoSnapshotRefreshInFlight[cleanTaskId]) return Promise.resolve(getSoraVideoTask(cleanTaskId));
+  soraVideoSnapshotRefreshInFlight[cleanTaskId] = true;
+  var current = getSoraVideoTask(cleanTaskId) || { task_id: cleanTaskId };
+  return fetchSoraVideoTask(cleanTaskId).then(function(result) {
+    var nextTask = upsertSoraVideoTaskFromResult(result, current);
+    if (nextTask && nextTask.used_account_id) setCurrentSoraAccountId(nextTask.used_account_id);
+    if (options && options.resetMediaRetry) delete soraVideoMediaReloadAttempts[cleanTaskId];
+    if (options && options.message) {
+      var msgEl = document.getElementById("sora-video-msg");
+      if (msgEl) msgEl.textContent = options.message;
+    }
+    renderSoraVideoWorkspace();
+    return nextTask;
+  }).catch(function(err) {
+    var message = parseApiErrorMessage(err);
+    upsertSoraVideoTask({ task_id: cleanTaskId, error_message: message });
+    renderSoraVideoWorkspace();
+    throw err;
+  }).finally(function() {
+    delete soraVideoSnapshotRefreshInFlight[cleanTaskId];
+  });
+}
+
 function startSoraVideoTaskPolling(taskId) {
   var cleanTaskId = (taskId || "").trim();
   if (!cleanTaskId) return;
@@ -1731,16 +1787,20 @@ function startSoraVideoTaskPolling(taskId) {
 
 function refreshAllSoraVideoTasks() {
   var pending = soraVideoTasks.filter(function(task) { return !task.is_terminal; });
-  if (!pending.length) {
+  var completed = soraVideoTasks.filter(function(task) { return task.is_terminal; });
+  if (!pending.length && !completed.length) {
     var msgEl = document.getElementById("sora-video-msg");
-    if (msgEl) msgEl.textContent = "当前没有需要刷新的未完成任务";
+    if (msgEl) msgEl.textContent = "当前没有可刷新的任务";
     return;
   }
   pending.forEach(function(task) {
     startSoraVideoTaskPolling(task.task_id);
   });
+  completed.forEach(function(task) {
+    refreshSoraVideoTaskSnapshot(task.task_id, { resetMediaRetry: true }).catch(function() {});
+  });
   var msgEl = document.getElementById("sora-video-msg");
-  if (msgEl) msgEl.textContent = "已重新启动全部未完成任务的轮询";
+  if (msgEl) msgEl.textContent = "已刷新全部任务，未完成任务继续轮询，已完成任务会重新获取预览地址";
 }
 
 function clearFinishedSoraVideoTasks() {
@@ -1907,6 +1967,10 @@ function importSoraVideoTask() {
   soraVideoTasks.forEach(function(task) {
     if (!task.is_terminal) startSoraVideoTaskPolling(task.task_id);
   });
+  var selectedTask = getSoraVideoTask(soraVideoSelectedTaskId);
+  if (selectedTask && selectedTask.is_terminal) {
+    refreshSoraVideoTaskSnapshot(selectedTask.task_id, { resetMediaRetry: true }).catch(function() {});
+  }
   document.getElementById("sora-video-task-id").addEventListener("change", function() {
     setSoraVideoTaskId(this.value || "");
   });

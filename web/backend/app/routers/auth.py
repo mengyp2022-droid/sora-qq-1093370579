@@ -3,24 +3,12 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
 from jose import JWTError, jwt
-from passlib.context import CryptContext
 from app.config import settings
 from app.database import get_db, init_db
+from app.security import get_password_hash, verify_password
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
-pwd_ctx = CryptContext(schemes=["bcrypt"], deprecated="auto")
 security = HTTPBearer(auto_error=False)
-
-
-def verify_password(plain: str, hashed: str) -> bool:
-    try:
-        return pwd_ctx.verify(plain, hashed)
-    except Exception:
-        return False
-
-
-def get_password_hash(password: str) -> str:
-    return pwd_ctx.hash(password)
 
 
 def _check_admin(username: str, password: str) -> bool:

@@ -295,9 +295,8 @@ def init_db():
         # 首次运行：插入默认管理员 admin / admin123
         c.execute("SELECT COUNT(*) FROM admin_users")
         if c.fetchone()[0] == 0:
-            from passlib.context import CryptContext
-            _pwd = CryptContext(schemes=["bcrypt"], deprecated="auto")
-            _hash = _pwd.hash("admin123")
+            from app.security import get_password_hash
+            _hash = get_password_hash("admin123")
             c.execute(
                 "INSERT INTO admin_users (username, password_hash) VALUES (?, ?)",
                 ("admin", _hash)
