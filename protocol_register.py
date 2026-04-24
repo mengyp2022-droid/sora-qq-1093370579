@@ -1122,6 +1122,9 @@ def _oauth_login_get_tokens(email: str, password: str, get_otp_fn, _step, prev_u
     if not exchange:
         _step(f"[*] 8.6 code 换 token 失败，请确认 OAuth redirect_uri 与系统设置一致: {login_redirect_uri[:50]}...")
         return {}
+    codex_access_token = (exchange.get("access_token") or "").strip()
+    if codex_access_token:
+        exchange["codex_access_token"] = codex_access_token
     if not exchange.get("refresh_token"):
         _step("[*] 8.6 换 token 成功但响应无 refresh_token")
     try:
@@ -1145,13 +1148,10 @@ def _oauth_login_get_tokens(email: str, password: str, get_otp_fn, _step, prev_u
             web_auth = {}
         web_at = (web_auth.get("access_token") or "").strip() if isinstance(web_auth, dict) else ""
         if web_at:
-            api_access_token = (exchange.get("access_token") or "").strip()
-            if api_access_token:
-                exchange["api_access_token"] = api_access_token
-            exchange["access_token"] = web_at
+            exchange["sora_access_token"] = web_at
             if isinstance(web_auth.get("session"), dict):
                 exchange["sora_session"] = dict(web_auth.get("session") or {})
-            _step("[*] 8.7 已复用登录 session 建立 Sora Web session")
+            _step("[*] 8.7 已复用登录 session 建立 Sora Web session，Codex access_token 已保留")
     return dict(exchange)
 
 

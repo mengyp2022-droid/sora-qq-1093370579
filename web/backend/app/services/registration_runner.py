@@ -360,7 +360,12 @@ def run_one_with_retry(
                     if not rt and isinstance(sora_tokens.get("session"), dict):
                         rt = (sora_tokens.get("session") or {}).get("refresh_token") or ""
                     rt = (rt or "").strip() if rt else ""
-                    at = (sora_tokens.get("access_token") or "").strip() or None
+                    at = (
+                        (sora_tokens.get("codex_access_token") or "").strip()
+                        or (sora_tokens.get("api_access_token") or "").strip()
+                        or (sora_tokens.get("access_token") or "").strip()
+                        or None
+                    )
                     idt = (sora_tokens.get("id_token") or "").strip() or None
                 with get_db() as conn:
                     c = conn.cursor()
