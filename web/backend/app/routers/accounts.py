@@ -139,15 +139,17 @@ def _probe_account_sora_quota(account: dict, body: AccountSoraQuotaRecheckBody) 
             token_out = sora_phone.rt_to_at_mobile(refresh_token, proxy_url=proxy_url)
             new_access_token = (token_out.get("access_token") or "").strip()
             new_refresh_token = (token_out.get("refresh_token") or "").strip()
+            new_id_token = (token_out.get("id_token") or "").strip()
             if new_access_token:
                 access_token = new_access_token
             if new_refresh_token:
                 refresh_token = new_refresh_token
-            if new_access_token or new_refresh_token:
+            if new_access_token or new_refresh_token or new_id_token:
                 sora_router._save_account_tokens(
                     account_id,
                     access_token=new_access_token,
                     refresh_token=new_refresh_token,
+                    id_token=new_id_token,
                 )
         except Exception as exc:
             refresh_error = str(exc or "").strip()[:300]
@@ -334,7 +336,7 @@ def list_accounts(
         offset = (page - 1) * page_size
         c.execute(
             f"""SELECT id, email, password, status, registered_at,
-                   has_sora, has_plus, phone_bound, proxy, refresh_token, access_token, created_at,
+                   has_sora, has_plus, phone_bound, proxy, refresh_token, access_token, id_token, created_at,
                    COALESCE(sora_enabled, 1) AS sora_enabled,
                    COALESCE(sora_quota_exhausted, 0) AS sora_quota_exhausted,
                    COALESCE(sora_quota_note, '') AS sora_quota_note,
@@ -359,12 +361,13 @@ def list_accounts(
             "proxy": r[8],
             "refresh_token": (r[9] or "")[:20] + "..." if r[9] else "",
             "access_token": (r[10] or "")[:20] + "..." if r[10] else "",
-            "created_at": r[11],
-            "sora_enabled": bool(r[12]),
-            "sora_quota_exhausted": bool(r[13]),
-            "sora_quota_note": r[14] or "",
-            "sora_quota_updated_at": r[15] or "",
-            "sora_last_error": r[16] or "",
+            "id_token": (r[11] or "")[:20] + "..." if r[11] else "",
+            "created_at": r[12],
+            "sora_enabled": bool(r[13]),
+            "sora_quota_exhausted": bool(r[14]),
+            "sora_quota_note": r[15] or "",
+            "sora_quota_updated_at": r[16] or "",
+            "sora_last_error": r[17] or "",
         })
     return {"total": total, "page": page, "page_size": page_size, "items": items}
 
@@ -472,7 +475,7 @@ def next_sora_available_account(username: str = Depends(get_current_user)):
     }
 
 
-@router.get("/{account_id}")
+@router.get("/{account_id:int}")
 def get_account_detail(account_id: int, username: str = Depends(get_current_user)):
     init_db()
     with get_db() as conn:
@@ -482,6 +485,7 @@ def get_account_detail(account_id: int, username: str = Depends(get_current_user
                       has_sora, has_plus, phone_bound,
                       COALESCE(refresh_token, '') AS refresh_token,
                       COALESCE(access_token, '') AS access_token,
+                      COALESCE(id_token, '') AS id_token,
                       COALESCE(sora_enabled, 1) AS sora_enabled,
                       COALESCE(sora_quota_exhausted, 0) AS sora_quota_exhausted,
                       COALESCE(sora_quota_note, '') AS sora_quota_note,
@@ -503,15 +507,16 @@ def get_account_detail(account_id: int, username: str = Depends(get_current_user
         "has_plus": bool(row[5]),
         "phone_bound": bool(row[6]),
         "has_token": bool((row[7] or "").strip() or (row[8] or "").strip()),
-        "sora_enabled": bool(row[9]),
-        "sora_quota_exhausted": bool(row[10]),
-        "sora_quota_note": row[11] or "",
-        "sora_quota_updated_at": row[12] or "",
-        "sora_last_error": row[13] or "",
+        "has_id_token": bool((row[9] or "").strip()),
+        "sora_enabled": bool(row[10]),
+        "sora_quota_exhausted": bool(row[11]),
+        "sora_quota_note": row[12] or "",
+        "sora_quota_updated_at": row[13] or "",
+        "sora_last_error": row[14] or "",
     }
 
 
-@router.post("/{account_id}/sora-state")
+@router.post("/{account_id:int}/sora-state")
 def update_account_sora_state(
     account_id: int,
     body: AccountSoraStateBody,
@@ -588,7 +593,7 @@ def export_accounts(
             params.append(1 if has_plus else 0)
         where_sql = " AND ".join(where) if where else "1=1"
         c.execute(
-            f"""SELECT email, password, status, registered_at, has_sora, has_plus, phone_bound, proxy, refresh_token, access_token,
+            f"""SELECT email, password, status, registered_at, has_sora, has_plus, phone_bound, proxy, refresh_token, access_token, id_token,
                        COALESCE(sora_enabled, 1), COALESCE(sora_quota_exhausted, 0), COALESCE(sora_quota_note, '')
             FROM accounts WHERE {where_sql} ORDER BY id DESC""",
             params
@@ -596,13 +601,13 @@ def export_accounts(
         rows = c.fetchall()
     buf = io.StringIO()
     writer = csv.writer(buf)
-    writer.writerow(["email", "password", "status", "registered_at", "has_sora", "has_plus", "phone_bound", "proxy", "refresh_token", "access_token", "sora_enabled", "sora_quota_exhausted", "sora_quota_note"])
+    writer.writerow(["email", "password", "status", "registered_at", "has_sora", "has_plus", "phone_bound", "proxy", "refresh_token", "access_token", "id_token", "sora_enabled", "sora_quota_exhausted", "sora_quota_note"])
     for r in rows:
         writer.writerow([
             r[0], r[1], r[2], r[3],
             "Y" if r[4] else "N", "Y" if r[5] else "N", "Y" if r[6] else "N",
-            r[7] or "", r[8] or "", r[9] or "",
-            "Y" if r[10] else "N", "Y" if r[11] else "N", r[12] or ""
+            r[7] or "", r[8] or "", r[9] or "", r[10] or "",
+            "Y" if r[11] else "N", "Y" if r[12] else "N", r[13] or ""
         ])
     buf.seek(0)
     return StreamingResponse(
@@ -623,7 +628,7 @@ def export_sora2_accounts(
 ):
     """
     导出 Sora2 可用账号：
-    - txt: email----password----refresh_token----access_token（无表头）
+    - txt: email----password----refresh_token----access_token----id_token（无表头）
     - csv: 带表头
     """
     fmt = (format or "txt").strip().lower()
@@ -646,7 +651,7 @@ def export_sora2_accounts(
             where.append("COALESCE(sora_quota_exhausted, 0) = 0")
         where_sql = " AND ".join(where) if where else "1=1"
         c.execute(
-            f"""SELECT email, password, refresh_token, access_token, status, registered_at
+            f"""SELECT email, password, refresh_token, access_token, id_token, status, registered_at
                 FROM accounts
                 WHERE {where_sql}
                 ORDER BY id DESC""",
@@ -658,9 +663,9 @@ def export_sora2_accounts(
     if fmt == "csv":
         buf = io.StringIO()
         writer = csv.writer(buf)
-        writer.writerow(["email", "password", "refresh_token", "access_token", "status", "registered_at"])
+        writer.writerow(["email", "password", "refresh_token", "access_token", "id_token", "status", "registered_at"])
         for r in rows:
-            writer.writerow([r[0] or "", r[1] or "", r[2] or "", r[3] or "", r[4] or "", r[5] or ""])
+            writer.writerow([r[0] or "", r[1] or "", r[2] or "", r[3] or "", r[4] or "", r[5] or "", r[6] or ""])
         buf.seek(0)
         return StreamingResponse(
             iter([buf.getvalue()]),
@@ -675,6 +680,7 @@ def export_sora2_accounts(
             (r[1] or "").strip(),
             (r[2] or "").strip(),
             (r[3] or "").strip(),
+            (r[4] or "").strip(),
         ]))
     body = "\n".join(lines)
     return StreamingResponse(

@@ -289,12 +289,18 @@ def run_one_phone_bind(task_id: str, account_id: int, email: str, account_passwo
         log(f"[绑定] {email} RT 换 AT...")
         out = sora_phone.rt_to_at_mobile(refresh_token.strip(), proxy_url=proxy_url or account_proxy, log_fn=log)
         at = (out.get("access_token") or "").strip()
-        new_rt = out.get("refresh_token")
-        if new_rt and isinstance(new_rt, str):
+        new_rt = (out.get("refresh_token") or "").strip()
+        new_id_token = (out.get("id_token") or "").strip()
+        if at or new_rt or new_id_token:
             try:
                 with get_db() as conn:
                     c = conn.cursor()
-                    c.execute("UPDATE accounts SET refresh_token = ? WHERE id = ?", (new_rt.strip(), account_id))
+                    if at:
+                        c.execute("UPDATE accounts SET access_token = ? WHERE id = ?", (at, account_id))
+                    if new_rt:
+                        c.execute("UPDATE accounts SET refresh_token = ? WHERE id = ?", (new_rt, account_id))
+                    if new_id_token:
+                        c.execute("UPDATE accounts SET id_token = ? WHERE id = ?", (new_id_token, account_id))
             except Exception:
                 pass
     if not at:

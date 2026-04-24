@@ -354,17 +354,19 @@ def run_one_with_retry(
             try:
                 rt = ""
                 at = ""
+                idt = ""
                 if isinstance(sora_tokens, dict):
                     rt = sora_tokens.get("refresh_token") or ""
                     if not rt and isinstance(sora_tokens.get("session"), dict):
                         rt = (sora_tokens.get("session") or {}).get("refresh_token") or ""
                     rt = (rt or "").strip() if rt else ""
                     at = (sora_tokens.get("access_token") or "").strip() or None
+                    idt = (sora_tokens.get("id_token") or "").strip() or None
                 with get_db() as conn:
                     c = conn.cursor()
                     c.execute(
-                        """INSERT OR REPLACE INTO accounts (email, password, status, registered_at, has_sora, has_plus, phone_bound, proxy, refresh_token, access_token)
-                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                        """INSERT OR REPLACE INTO accounts (email, password, status, registered_at, has_sora, has_plus, phone_bound, proxy, refresh_token, access_token, id_token)
+                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                         (
                             email,
                             pwd,
@@ -376,6 +378,7 @@ def run_one_with_retry(
                             (same_proxy or ""),
                             rt or None,
                             at,
+                            idt,
                         ),
                     )
                     created = datetime.now().strftime("%Y-%m-%d %H:%M:%S")

@@ -293,7 +293,7 @@ def _pick_next_available_account(exclude_ids: list = None) -> dict | None:
     }
 
 
-def _save_account_tokens(account_id: int, access_token: str = "", refresh_token: str = "") -> None:
+def _save_account_tokens(account_id: int, access_token: str = "", refresh_token: str = "", id_token: str = "") -> None:
     init_db()
     with get_db() as conn:
         c = conn.cursor()
@@ -301,6 +301,8 @@ def _save_account_tokens(account_id: int, access_token: str = "", refresh_token:
             c.execute("UPDATE accounts SET access_token = ? WHERE id = ?", (access_token, account_id))
         if refresh_token:
             c.execute("UPDATE accounts SET refresh_token = ? WHERE id = ?", (refresh_token, account_id))
+        if id_token:
+            c.execute("UPDATE accounts SET id_token = ? WHERE id = ?", (id_token, account_id))
 
 
 def _mark_account_sora(account_id: int) -> None:
@@ -1270,6 +1272,7 @@ def _resolve_tokens(
 
     access_token = (body.access_token or "").strip() if allow_direct_tokens else ""
     refresh_token = (body.refresh_token or "").strip() if allow_direct_tokens else ""
+    id_token = ""
     proxy_url = (body.proxy_url or "").strip() if allow_direct_tokens else ""
 
     # 池模式自动选账号
@@ -1317,17 +1320,26 @@ def _resolve_tokens(
         out = sora_phone.rt_to_at_mobile(refresh_token, proxy_url=proxy_url)
         new_access_token = (out.get("access_token") or "").strip()
         new_rt = (out.get("refresh_token") or "").strip()
+        new_id_token = (out.get("id_token") or "").strip()
         if new_access_token:
             access_token = new_access_token
         if new_rt:
             refresh_token = new_rt
-        if request_account_id is not None and (new_access_token or new_rt):
-            _save_account_tokens(int(request_account_id), access_token=new_access_token, refresh_token=new_rt)
+        if new_id_token:
+            id_token = new_id_token
+        if request_account_id is not None and (new_access_token or new_rt or new_id_token):
+            _save_account_tokens(
+                int(request_account_id),
+                access_token=new_access_token,
+                refresh_token=new_rt,
+                id_token=new_id_token,
+            )
 
     return {
         "account": account,
         "access_token": access_token,
         "refresh_token": refresh_token,
+        "id_token": id_token,
         "proxy_url": proxy_url,
     }
 
@@ -1604,6 +1616,7 @@ def rt_to_at(body: SoraTokenBody, caller: dict = Depends(get_sora_api_caller)):
         "email": data["account"]["email"] if data["account"] else "",
         "access_token": data["access_token"],
         "refresh_token": data["refresh_token"],
+        "id_token": data["id_token"],
     }
 
 
@@ -1698,6 +1711,7 @@ def sora_activate(body: SoraTokenBody, caller: dict = Depends(get_sora_api_calle
             account["id"],
             access_token=(tokens.get("access_token") or "").strip(),
             refresh_token=(tokens.get("refresh_token") or "").strip(),
+            id_token=(tokens.get("id_token") or "").strip(),
         )
 
     at = (tokens.get("access_token") or "").strip()

@@ -1679,7 +1679,7 @@ def sora_probe_web_auth(access_token: str = "", proxy_url: str = None, log_fn=No
 
 def rt_to_at_mobile(refresh_token: str, proxy_url: str = None, log_fn=None) -> dict:
     """
-    RT 换 AT（移动端 client_id/redirect_uri）。返回 {"access_token": str, "refresh_token": str|None}，失败抛异常或返回空。
+    RT 换 AT（移动端 client_id/redirect_uri）。返回 {"access_token": str, "refresh_token": str|None, "id_token": str|None}，失败抛异常或返回空。
     """
     rt = (refresh_token or "").strip()
     if not rt:
@@ -1703,7 +1703,11 @@ def rt_to_at_mobile(refresh_token: str, proxy_url: str = None, log_fn=None) -> d
                 d = r.json()
                 at = (d.get("access_token") or "").strip()
                 if at:
-                    return {"access_token": at, "refresh_token": d.get("refresh_token")}
+                    return {
+                        "access_token": at,
+                        "refresh_token": d.get("refresh_token"),
+                        "id_token": d.get("id_token"),
+                    }
             if log_fn and attempt == 0:
                 code, message, preview = _extract_error(r)
                 _log(log_fn, f"[phone_bind] RT 换 AT HTTP {r.status_code} code={code or '-'} msg={message or preview or '-'}")

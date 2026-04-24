@@ -55,6 +55,7 @@ def init_db():
                 proxy TEXT,
                 refresh_token TEXT,
                 access_token TEXT,
+                id_token TEXT,
                 created_at TEXT DEFAULT (datetime('now'))
             )
         """)
@@ -188,6 +189,10 @@ def init_db():
         except Exception:
             pass
         try:
+            c.execute("ALTER TABLE accounts ADD COLUMN id_token TEXT")
+        except Exception:
+            pass
+        try:
             c.execute("ALTER TABLE accounts ADD COLUMN sora_enabled INTEGER DEFAULT 1")
         except Exception:
             pass
@@ -316,7 +321,7 @@ def init_db():
             ]
             for email, pwd, status, reg_at, sora, plus, phone, proxy, rt in test_rows:
                 c.execute(
-                    """INSERT INTO accounts (email, password, status, registered_at, has_sora, has_plus, phone_bound, proxy, refresh_token, access_token)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                    (email, pwd, status, reg_at, sora, plus, phone, proxy or None, rt or None, None)
+                    """INSERT INTO accounts (email, password, status, registered_at, has_sora, has_plus, phone_bound, proxy, refresh_token, access_token, id_token)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (email, pwd, status, reg_at, sora, plus, phone, proxy or None, rt or None, None, None)
                 )

@@ -487,8 +487,8 @@ def _parse_code_from_body(body: str) -> str:
 
 
 def _parse_tokens_from_body(body: str) -> dict:
-    """从 callback 响应体（HTML/JSON）中解析 refresh_token、access_token。"""
-    out = {"refresh_token": "", "access_token": ""}
+    """从 callback 响应体（HTML/JSON）中解析 refresh_token、access_token、id_token。"""
+    out = {"refresh_token": "", "access_token": "", "id_token": ""}
     if not body or not isinstance(body, str):
         return out
     try:
@@ -506,6 +506,9 @@ def _parse_tokens_from_body(body: str) -> dict:
                     if isinstance(v, str) and len(v.strip()) > 10:
                         out["access_token"] = v.strip()
                         break
+                v = data.get("id_token")
+                if isinstance(v, str) and len(v.strip()) > 10:
+                    out["id_token"] = v.strip()
                 for nest in ("session", "credentials", "auth"):
                     obj = data.get(nest)
                     if isinstance(obj, dict):
@@ -517,6 +520,10 @@ def _parse_tokens_from_body(body: str) -> dict:
                             v = obj.get("access_token") or obj.get("token")
                             if isinstance(v, str) and len(v.strip()) > 10:
                                 out["access_token"] = v.strip()
+                        if not out["id_token"]:
+                            v = obj.get("id_token")
+                            if isinstance(v, str) and len(v.strip()) > 10:
+                                out["id_token"] = v.strip()
         for key_rt in ("refresh_token", "refresh_token_secret"):
             m = re.search(r"[\"']" + re.escape(key_rt) + r"[\"']\s*:\s*[\"']([^\"']{15,})[\"']", body, re.I)
             if m and not out["refresh_token"]:
@@ -527,6 +534,10 @@ def _parse_tokens_from_body(body: str) -> dict:
             if m and not out["access_token"]:
                 out["access_token"] = m.group(1).strip()
                 break
+        if not out["id_token"]:
+            m = re.search(r"[\"']id_token[\"']\s*:\s*[\"']([^\"']{15,})[\"']", body, re.I)
+            if m:
+                out["id_token"] = m.group(1).strip()
         if not out["refresh_token"]:
             m = re.search(r'"refresh_token"\s*:\s*"([A-Za-z0-9_\-\.]{50,800})"', body)
             if m:
@@ -535,6 +546,10 @@ def _parse_tokens_from_body(body: str) -> dict:
             m = re.search(r'"access_token"\s*:\s*"([A-Za-z0-9_\-\.]{50,1200})"', body)
             if m:
                 out["access_token"] = m.group(1).strip()
+        if not out["id_token"]:
+            m = re.search(r'"id_token"\s*:\s*"([A-Za-z0-9_\-\.]{50,1600})"', body)
+            if m:
+                out["id_token"] = m.group(1).strip()
         if not out["refresh_token"] and "refresh_token" in body:
             m = re.search(r"refresh_token[=:]\s*[\"']?([A-Za-z0-9_\-\.]{50,800})[\"']?", body, re.I)
             if m:
@@ -1157,8 +1172,8 @@ def decode_jwt_payload(token: str) -> dict:
 
 
 def _parse_tokens_from_url(final_url: str) -> dict:
-    """从 callback 最终 URL 的 query 或 fragment 中解析 refresh_token、access_token。返回 {\"refresh_token\": \"\", \"access_token\": \"\"}。"""
-    out = {"refresh_token": "", "access_token": ""}
+    """从 callback 最终 URL 的 query 或 fragment 中解析 refresh_token、access_token、id_token。"""
+    out = {"refresh_token": "", "access_token": "", "id_token": ""}
     if not final_url or not isinstance(final_url, str):
         return out
     try:
@@ -1177,6 +1192,9 @@ def _parse_tokens_from_url(final_url: str) -> dict:
                 if vals and isinstance(vals[0], str) and len(vals[0].strip()) > 10:
                     out["access_token"] = vals[0].strip()
                     break
+            vals = params.get("id_token") or params.get("id.token")
+            if vals and isinstance(vals[0], str) and len(vals[0].strip()) > 10:
+                out["id_token"] = vals[0].strip()
     except Exception:
         pass
     return out

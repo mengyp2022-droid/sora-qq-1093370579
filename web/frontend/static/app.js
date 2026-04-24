@@ -498,6 +498,8 @@ function loadAccounts() {
         <td>${r.has_plus ? "是" : "否"}</td>
         <td>${r.phone_bound ? "是" : "否"}</td>
         <td title="${escapeHtml(r.refresh_token || "")}">${escapeHtml((r.refresh_token || "").slice(0, 24))}${(r.refresh_token || "").length > 24 ? "…" : ""}</td>
+        <td title="${escapeHtml(r.access_token || "")}">${escapeHtml((r.access_token || "").slice(0, 24))}${(r.access_token || "").length > 24 ? "…" : ""}</td>
+        <td title="${escapeHtml(r.id_token || "")}">${escapeHtml((r.id_token || "").slice(0, 24))}${(r.id_token || "").length > 24 ? "…" : ""}</td>
         <td>${escapeHtml(r.registered_at || r.created_at || "")}</td>
         <td title="${escapeHtml((r.sora_quota_note || '') + ((r.sora_quota_updated_at || '') ? (' @ ' + r.sora_quota_updated_at) : ''))}">${escapeHtml(getSoraQuotaText(r))}</td>
         <td>
