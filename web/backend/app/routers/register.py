@@ -44,6 +44,11 @@ def _run_registration_loop():
     thread_count = max(1, min(32, int(settings.get("thread_count") or "1")))
     init_db()
 
+    def _email_key(row) -> str:
+        if not row or len(row) < 2 or not row[1]:
+            return ""
+        return row[1].strip().lower()
+
     def _update_heartbeat():
         global _registration_heartbeat
         with _registration_lock:
@@ -57,16 +62,30 @@ def _run_registration_loop():
 
     try:
         _log_run(task_id, "info", "注册任务已启动")
-        failed_this_run = set()  # 本 run 内已失败过的邮箱，不再重复拉取，避免无限重试同一条
+        attempted_ids_this_run = set()  # 本 run 内已提交处理过的邮箱 ID，不再重复拉取
+        attempted_emails_this_run = set()  # 兜底按邮箱去重，避免大小写或重复数据导致重复跑
         while True:
             if is_stop_requested():
                 _log_run(task_id, "info", "已请求停止，立即结束")
                 break
-            batch = fetch_unregistered_emails(limit=thread_count)
-            batch = [row for row in batch if (row[1] or "").strip().lower() not in failed_this_run]
+            raw_batch = fetch_unregistered_emails(limit=thread_count)
+            batch = [
+                row for row in raw_batch
+                if row
+                and row[0] not in attempted_ids_this_run
+                and _email_key(row) not in attempted_emails_this_run
+            ]
             if not batch:
-                _log_run(task_id, "info", "注册任务结束，无更多未注册邮箱")
+                if raw_batch:
+                    _log_run(task_id, "info", "本轮剩余邮箱均已在当前任务处理过，结束当前注册任务")
+                else:
+                    _log_run(task_id, "info", "注册任务结束，无更多未注册邮箱")
                 break
+            for row in batch:
+                attempted_ids_this_run.add(row[0])
+                email_key = _email_key(row)
+                if email_key:
+                    attempted_emails_this_run.add(email_key)
             _update_heartbeat()
             _log_run(task_id, "info", f"本批开始注册 共 {len(batch)} 条")
             ex = ThreadPoolExecutor(max_workers=min(len(batch), thread_count))
@@ -97,12 +116,7 @@ def _run_registration_loop():
                         break
                     num_done += 1
                     try:
-                        result = fut.result()
-                        ok = result[0] if isinstance(result, (tuple, list)) and len(result) > 0 else result
-                        if ok is False:
-                            row = futures.get(fut)
-                            if row and len(row) > 1:
-                                failed_this_run.add((row[1] or "").strip().lower())
+                        fut.result()
                     except Exception:
                         pass
                     _update_heartbeat()
